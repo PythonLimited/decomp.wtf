@@ -1,45 +1,29 @@
 [project]
-name = "decompnet"
-version = "0.10.6"
-description = "decomp.wtf (What The Function): your AI agent decompiles games you own into C that compiles to the exact same bytes, with a live view. Runs locally."
-readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
-authors = [
-    { name = "sam wolfs", email = "appelsiensam@gmail.com" }
-]
+name = "dcore"
+version = "0.1.0"
+description = "Byte-exact decompilation for shipped binaries: core loop + arch/platform packs"
+license = {text = "MIT"}
 requires-python = ">=3.12"
 dependencies = [
-    "capstone>=5.0.9",
-    "mcp>=2.3.0",
-    "pyelftools>=0.33",
-    "splat64[mips]>=0.50.1",
-    "spimdisasm>=1.42.4",
-    "rabbitizer>=1.16.2",
+    "capstone>=5.0.9",   # arch packs disassemble function bytes to rebuild relocations
+    "pyelftools>=0.33",  # the ELF platform pack reads DWARF
+    "mcp>=2.3.0",        # backends talk MCP; the app exposes MCP to agents
     "httpx>=0.28",
     "uvicorn>=0.30",
-    "ninja>=1.11",  # builds GameCube/Wii (dtk) and other ninja-based decomp projects
-    "truststore>=0.10; sys_platform == 'win32'",  # HTTPS verified by Windows itself (see decompnet/__init__.py)
-    "zstandard>=0.23; sys_platform == 'linux'",  # the .zst runtime old compilers need, without the zstd command
 ]
-
-[project.urls]
-Homepage = "https://decomp.wtf"
-Source = "https://github.com/i12bp8/decomp.wtf"
 
 [project.scripts]
-decompnet = "decompnet.cli:main"
-decomp = "decompnet.app.cli:main"
+dcore = "dcore.app.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [build-system]
-requires = ["uv_build>=0.12.18,<0.13.0"]
-build-backend = "uv_build"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-]
+[tool.hatch.build.targets.wheel]
+packages = ["src/dcore"]
 
 [tool.pytest.ini_options]
-# the room tests drive the room server through Starlette's TestClient, which warns about the timeouts real clients use
-filterwarnings = ["ignore:You should not use the 'timeout' argument with the TestClient"]
+testpaths = ["tests"]

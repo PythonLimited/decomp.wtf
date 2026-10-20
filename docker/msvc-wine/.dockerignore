@@ -1,0 +1,4 @@
+# The staged ISO packages and extracted trees are inputs for build.sh, not build context:
+# only staging/VC14 (the normalized toolset) must reach the Dockerfile's COPY.
+staging/iso
+staging/tools

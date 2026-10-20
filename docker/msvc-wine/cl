@@ -1,0 +1,25 @@
+#!/bin/bash
+# The MSVC driver inside the image: cl 14.00.24215 under wine.
+#
+# docker hands the compile arguments as unix paths (/work/func.c), but cl is a Windows
+# program: every /work prefix is bridged to wine's Z:\work before it sees the argument
+# (this covers /Fo<path>, /I<path> and bare source paths alike).
+set -e
+export WINEPREFIX=/wine WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="
+# VC's own headers plus the SDK sets the real product used: the Universal CRT's corecrt.h
+# (VS2015's crtdefs.h includes it), and the um/shared trees for windows.h and friends
+export INCLUDE='Z:\opt\msvc\VC\include;Z:\opt\msvc\sdk\ucrt;Z:\opt\msvc\sdk\shared;Z:\opt\msvc\sdk\um'
+# cl wants a Windows-visible scratch dir for its .il intermediates (D8037 without one);
+# a wineboot prefix has no C:\windows\Temp, but Z: maps the container root and /tmp is there
+export TMP='Z:\tmp' TEMP='Z:\tmp'
+
+args=()
+for a in "$@"; do
+	args+=("$(printf '%s' "$a" | sed 's|/work|Z:\\work|g')")
+done
+
+# A fresh container from the committed prefix needs wine's update pass once before cl can
+# create its temp files (D8037 otherwise). It is idempotent and takes about a second.
+wine64 wineboot -u >/dev/null 2>&1 || true
+
+exec wine64 /opt/msvc/VC/bin/amd64/cl.exe "${args[@]}"

@@ -1,28 +1,17 @@
-# Python-generated files
+.venv/
 __pycache__/
-*.py[oc]
+*.pyc
+.pytest_cache/
+.uv/
+.decomp-home/
 build/
 dist/
-wheels/
-*.egg-info
 
-# Virtual environments
-.venv
+# msvc-wine image build scratch (extracted from the user's VS2015 U3 ISO)
+docker/msvc-wine/staging/
 
-# DecompNet
-decompnet.db*
-projects/*/target/*.o
-export/
-.pytest_cache/
 
-# Website tooling and release artifacts (wheels are published to decomp.wtf/dl/, not kept in git)
-site/node_modules/
-.wrangler/
-site/public/dl/*.whl
-
-# Downloaded by projects/zlib-n64/prepare.py
-projects/zlib-n64/original/
-
-# The retired hosted network's server scripts (kept locally only)
-deploy/
-scripts/
+docker/msvc-hangover/staging/
+docker/msvc-hangover/hangover_*.tar
+.qwen/
+docs/
