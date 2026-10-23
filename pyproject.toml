@@ -25,5 +25,21 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/dcore"]
 
+[tool.hatch.build.targets.sdist]
+# A checkout can carry `.venv` (uv) and/or `venv` (older setup). Their absolute symlinks make an
+# sdist invalid; never package a virtual environment, VCS data, local notes or build output.
+exclude = [
+  ".venv",
+  "venv",
+  ".git",
+  ".qwen",
+  "docs",
+  "dist",
+  "build",
+  ".pytest_cache",
+  "**/__pycache__",
+  "**/*.pyc",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
