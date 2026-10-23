@@ -102,7 +102,7 @@ the pinned compiler, so it does not need one.
 |---|---|---|---|
 | **IDA Pro** | ready | a licensed IDA Pro with IDAPython; `.i64` reuse is supported | best type recovery and Hex-Rays pseudocode; names/xrefs/strings |
 | **Ghidra** | planned — high priority | Ghidra (Apache-2.0) with a supported JDK; PyGhidra or a headless analyzer | a free, scriptable decompiler and headless analysis; fewer type-recovery features than IDA |
-| **None** | always available | nothing | byte-exact matching; no database names, xrefs or pseudocode seeds |
+| **None** | matching only — the import sweep currently needs IDA | nothing | byte-exact matching; no database names, xrefs or pseudocode seeds |
 
 Licensing boundaries:
 
@@ -159,9 +159,13 @@ enabled backend. Until it lands, dcore uses IDA or runs without a backend.
 
 ### No backend
 
-Nothing to install. The matcher still compiles each function with the pinned
-compiler and compares bytes and relocations; you lose database names, xrefs and
-pseudocode seeds.
+Nothing to install. The matcher is backend-independent: once an analysis exists, it compiles each
+function with the pinned compiler and compares bytes and relocations; you lose database names,
+xrefs and pseudocode seeds.
+
+The **import sweep currently still calls IDA**. A native enricher (planned, #2 after Ghidra) will
+read ELF/DWARF, PE/COFF/PDB and Mach-O/dSYM directly, so importing will not require a proprietary
+database either.
 
 
 ---
