@@ -1817,6 +1817,19 @@ def test_set_signature_replaces_a_free_function_prototype(tmp_path, elf_bytes):
     assert not any("int score_update(int *score, int delta, int max);" in b for b in live)
 
 
+def test_guess_language_detects_cxx_headers():
+    """Header-only edit gates compile the header without a function. A C++ header that only looks
+    like C prototypes (extern "C", <cstdint>, std::) must not be validated as `func.c`; that hides
+    the real bad declaration behind a C++ include error."""
+    from dcore.core.compilers import guess_language
+
+    assert guess_language('#include <cstdint>\nextern "C" { int f(); }\n') == "c++"
+    assert guess_language("namespace acme { class Widget; }\nvoid Widget::run();\n") == "c++"
+    assert guess_language("std::string name;\n") == "c++"
+    assert guess_language("#include <stdint.h>\nint f(void);\n") == "c"
+    assert guess_language("int rename(const char *old, const char *new);\n") == "c"
+
+
 def test_analyze_compiler_groups_rank_by_functions_not_units():
     """A vendored MySQL tree can contribute more C units than the game has merged C++ units. The
     project default must follow the code the user decompiles (function count), not unit count."""

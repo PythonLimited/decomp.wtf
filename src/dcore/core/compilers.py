@@ -385,5 +385,24 @@ def resolve(net, slug: str, language: str = "c", unit: str | None = None,
 
 
 def guess_language(text: str) -> str:
-    """C or C++ for a header whose language has to be guessed (a header-only regression check)."""
-    return "c++" if re.search(r"\b(class|namespace|template|public:|private:|protected:)\b", text or "") else "c"
+    """C or C++ for a header whose language has to be guessed (a header-only regression check).
+
+    Plain C headers are common, so default to C — but a `#include <cstdint>`, `extern "C"`, `std::`
+    or a real C++ declaration must select C++. Validating a C++ header as C (`func.c`) dies at the
+    first C++ include and hides the actual bad declaration from every edit gate.
+    """
+    text = text or ""
+    cxx = re.search(
+        r'extern\s*"C"'
+        r"|#\s*include\s*<c(?:std|string|cstdio|cstdlib|cmath|cassert|cctype|cerrno|climits|cfloat|"
+        r"cstdarg|ctime|cwchar|cuchar|stddef|stdint)[a-z]*>"
+        r"|#\s*include\s*<(?:vector|string|map|unordered_map|memory|algorithm|utility|type_traits|"
+        r"initializer_list|optional|variant|filesystem|thread|mutex|atomic|chrono|iostream|sstream|"
+        r"fstream|regex|functional|array|tuple|bitset|deque|list|set|queue|stack)>"
+        r"|\bstd\s*::|\bnamespace\s+[A-Za-z_]|\bclass\s+[A-Za-z_]|\btemplate\s*<"
+        r"|\busing\s+[A-Za-z_]|\bconstexpr\b|\bnoexcept\b|\bnullptr\b|\boperator\s*[^\s(]"
+        r"|\b(?:public|private|protected)\s*:|\b(?:virtual|override|final)\b"
+        r"|(?<![:\w])[A-Za-z_]\w*::[A-Za-z_~]",
+        text,
+    )
+    return "c++" if cxx else "c"
