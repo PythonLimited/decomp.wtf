@@ -84,12 +84,39 @@ One registry is shared by every function:
 | Python 3.12+ | managed with `uv` |
 | `uv` | dependency and command runner |
 | Docker | pinned GCC/MSVC compiler images |
-| IDA Pro | for the default IDA backend; `.i64` reuse is supported |
-| Optional | Ghidra adapter (contract exists, implementation pending) |
+| Analysis backend | **optional**: licensed IDA Pro, or Ghidra (Apache-2.0; adapter planned). Core matching works without one. |
 
 Currently tested on **macOS only**. The compiler containers actively emulate the
 target architecture (for example `linux/amd64` on Apple silicon), so other host
 platforms are unvalidated and may be slow.
+
+---
+
+## Analysis backends
+
+A backend is enrichment: it supplies names, types, xrefs, strings and decompiler
+text. The matcher itself works from the bytes, the reconstructed relocations and
+the pinned compiler, so it does not need one.
+
+| Backend | Status | You need | What it adds |
+|---|---|---|---|
+| **IDA Pro** | ready | a licensed IDA Pro with IDAPython; `.i64` reuse is supported | best type recovery and Hex-Rays pseudocode; names/xrefs/strings |
+| **Ghidra** | planned — high priority | Ghidra (Apache-2.0) with a supported JDK; PyGhidra or a headless analyzer | a free, scriptable decompiler and headless analysis; fewer type-recovery features than IDA |
+| **None** | always available | nothing | byte-exact matching; no database names, xrefs or pseudocode seeds |
+
+Licensing boundaries:
+
+- This repository is MIT. The backends are **separate programs under their own
+  licenses**; none of their code, SDK headers or databases are bundled here.
+- IDA Pro is commercial. Users supply their own license; IDA Free has
+  commercial-use restrictions. Check the EULA before automating or hosting it.
+- Ghidra is Apache-2.0. The adapter talks to it out-of-process (headless JSON or
+  PyGhidra); no Ghidra code is copied into this tree.
+- Decompiled output still belongs to the game's rights holder. The app must not
+  distribute game code or databases.
+
+See `src/dcore/backends/` for the shared `Analysis` contract; IDA is implemented,
+Ghidra is the next backend.
 
 ---
 
@@ -208,7 +235,7 @@ Pinned compilers validated on generated headers:
 ```text
 src/dcore/
   core/          loop, registry, header projection, judge, compiler, worker
-  backends/      analysis adapters (IDA, Ghidra contract)
+  backends/      analysis adapters (IDA ready; Ghidra planned)
   targets/       arch and platform packs
   app/           server, web UI, MCP tools, CLI
 
