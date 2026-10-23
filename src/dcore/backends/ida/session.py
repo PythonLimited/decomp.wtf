@@ -24,6 +24,13 @@ from mcp.client.stdio import stdio_client
 AGENT = "decomp-wtf"
 
 
+def _reason(exc: BaseException) -> str:
+    """Flatten `ExceptionGroup`/TaskGroup noise into the real transport error."""
+    if getattr(exc, "exceptions", None):
+        return "; ".join(_reason(e) for e in exc.exceptions)
+    return str(exc) or exc.__class__.__name__
+
+
 class IdaError(RuntimeError):
     """IDA couldn't be reached or a sweep failed; shown to the user as is."""
 
@@ -35,7 +42,10 @@ def command() -> list[str]:
     if exe := shutil.which("ida-mcp"):
         return [exe, "stdio", f"--agent={AGENT}"]
     if uvx := shutil.which("uvx"):
-        return [uvx, "ida-mcp", "stdio", f"--agent={AGENT}"]
+        # `--offline` is essential: without it uvx tries to resolve the package from PyPI on every
+        # start, which fails (or delays) when the app is run without internet even though the
+        # package is already in the uv cache.
+        return [uvx, "--offline", "ida-mcp", "stdio", f"--agent={AGENT}"]
     return []
 
 
@@ -79,7 +89,7 @@ class IdaSession:
             raise IdaError(f"the IDA MCP server didn't start within {self.ready_timeout:g} seconds "
                            f"(is IDA installed and licensed?)")
         if self._error is not None:
-            raise IdaError(f"the IDA MCP server failed to start: {self._error}")
+            raise IdaError(f"the IDA MCP server failed to start: {_reason(self._error)}")
         return self
 
     def _run(self, cmd: list[str]) -> None:

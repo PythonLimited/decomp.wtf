@@ -130,6 +130,9 @@ Ghidra is the next backend.
    ```
 
    This provides `ida-mcp`; having `ida-mcp` on `PATH` works too.
+   dcore runs the fallback as `uvx --offline ida-mcp …`, so warm the cache once
+   while online (`uvx ida-mcp --help`) — after that, starting IDA needs no network.
+   If the package is not cached, the error says so instead of trying PyPI.
 3. If you use a custom server command, point dcore at it:
 
    ```bash
