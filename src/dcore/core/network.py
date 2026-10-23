@@ -1143,18 +1143,33 @@ class Network:
         if row is None:
             raise NetworkError("this unit has no stored header to promote from")
         header = row["header"] or ""
-        # the text being promoted lives in the VISIBLE part; the stored projection block may repeat
-        # the same declaration, so split there first and only touch what precedes it
+        # The text being promoted lives in the VISIBLE part; never edit the generated block itself.
         from . import interfaces as ifc
 
         mark = ifc._TYPE_MARK_BEGIN
-        idx = header.find(mark)
-        before, after = (header[:idx], header[idx:]) if idx >= 0 else (header, "")
-        count = before.count(old)
-        if count != 1:
+        end_mark = ifc._TYPE_MARK_END
+        begin_idx = header.find(mark)
+        end_idx = header.find(end_mark)
+        # The generated block can sit before OR after the visible legacy text (older stored
+        # versions put it first). Search the visible parts on both sides, never the block itself.
+        if begin_idx >= 0 and end_idx > begin_idx:
+            head = header[:begin_idx]
+            block = header[begin_idx:end_idx + len(end_mark)]
+            tail = header[end_idx + len(end_mark):]
+            visible_count = head.count(old) + tail.count(old)
+            if visible_count == 1:
+                if old in tail:
+                    stripped_header = head + block + tail.replace(old, "", 1)
+                else:
+                    stripped_header = head.replace(old, "", 1) + block + tail
+            else:
+                stripped_header = header
+        else:
+            visible_count = header.count(old)
+            stripped_header = header.replace(old, "", 1)
+        if visible_count != 1:
             raise NetworkError(f"the text must occur exactly once in the stored header's visible part "
-                               f"(found {count})")
-        stripped_header = before.replace(old, "", 1) + after
+                               f"(found {visible_count})")
         entry = entries_mod.add(self, proj["slug"], unit, kind, (new or old).strip(), agent=agent)
         members = self._matched_using(proj, unit)
         live = entries_mod.list_for(self, proj["slug"], unit)
