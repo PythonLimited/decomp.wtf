@@ -444,12 +444,18 @@ def _qualify_types(txt: str, own_ns: tuple, by_name: dict, fwd_base: dict,
             # An unqualified self-reference (copy ctor, pointer-to-self member) names this class,
             # not whichever same-leaf entry the bare-name map happened to pick.
             return word
+        if word in _STD_FORWARDS:
+            # DWARF often stores a bare `shared_ptr<…>`; a boost::shared_ptr entry must not win
+            # the bare-name lookup for a standard-library spelling.
+            return "std::" + word
         t = by_name.get(word) or fwd_base.get(word)
         if t is None and templates:
             specs = templates.get(word) or []
             t = next((s for s in specs if tuple(s.get("ns") or ()) != own_ns),
                      specs[0] if specs else None)
         if t is None:
+            if word in _STD_FORWARDS:
+                return "std::" + word
             return word
         if not _spellable(t):
             tbase, targs = _template_parts(t.get("name") or "")
@@ -759,6 +765,11 @@ def type_block(analysis: dict, text: str, *, types: list[dict] | None = None,
             base = re.sub(r"^(?:const|volatile)\s+", "", base).strip()
             base = re.sub(r"^(?:enum|struct|class)\s+", "", base).strip().rstrip("*& ").strip()
             leaf = base.rsplit("::", 1)[-1]
+            if base in ("shared_ptr", "weak_ptr", "std::shared_ptr", "std::weak_ptr"):
+                # These hold an incomplete type; a forward declaration is enough. Treat the
+                # argument as a pointer target instead of requiring a complete by-value type.
+                # DWARF often stores the bare `shared_ptr`, without the `std::` prefix.
+                return len(args) == 1 and usable(args[0].strip() + " *")
             if base.startswith("std::"):
                 return all(usable(a) for a in args)
             # A template only the analysis names is not a definition: a by-value member of it
@@ -943,11 +954,12 @@ def type_block(analysis: dict, text: str, *, types: list[dict] | None = None,
                         + ' {' + (" public:" if kw == "class" else ""))
             methods = t.get("methods") or []
             virtual_class = any(m.get("virtual") for m in methods)
-            if virtual_class:
-                # The vptr is compiler-generated, but only if the class is actually polymorphic.
-                # Virtual methods whose signatures need unavailable types are skipped below, so
-                # anchor the vtable explicitly or every field shifts by 8
-                # (`ACME::Aurora::Core::Component` +0x1c8).
+            renderable_virtual = any(
+                m.get("virtual") and _method_decl(t, m, usable) is not None for m in methods)
+            if virtual_class and not renderable_virtual:
+                # Only anchor when every virtual signature is unspellable; otherwise the first
+                # real virtual method already occupies slot 0 and the anchor would shift every
+                # vtable call by one slot (isRun +0x38 instead of +0x30).
                 body.append("    virtual void _dcore_vtable_anchor();")
             members = t.get("members") or []
             ptr_size = 4 if str(analysis.get("arch") or "").lower() in (

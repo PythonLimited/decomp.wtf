@@ -1830,6 +1830,44 @@ def test_interfaces_platform_typedefs_are_spellable_in_methods():
     assert "ino_t fileIno();" in block
 
 
+def test_interfaces_shared_ptr_accepts_a_forward_declared_type():
+    """A shared_ptr member is valid with an incomplete pointee. Requiring a complete by-value type
+    turned `shared_ptr<AServerBase>` into an opaque byte array, so `ptr->isRun()` could not compile."""
+    from dcore.core import interfaces
+
+    analysis = {"types": [
+        {"name": "Server", "ns": ["ACME", "Aurora"], "kind": "class", "size": 8,
+         "members": [], "statics": [], "methods": [{"name": "isRun", "ret": "bool", "virtual": True}]},
+        {"name": "Manager", "ns": ["ACME", "Aurora"], "kind": "class", "size": 40,
+         "members": [{"name": "server", "off": 8,
+                      "type": "shared_ptr<ACME::Aurora::Server>"}], "statics": [], "methods": []},
+    ]}
+    block = interfaces.type_block(analysis, "ACME::Aurora::Manager *m;")
+    assert "std::shared_ptr<" in block and "server" in block
+    assert "unsigned char server" not in block
+
+
+def test_interfaces_vtable_anchor_only_when_no_virtual_method_renders():
+    """A real virtual method already occupies vtable slot 0. Adding the synthetic anchor as well
+    shifts every call by one slot (isRun +0x38 instead of +0x30). Anchor only when all virtual
+    signatures are unspellable and would otherwise be dropped."""
+    from dcore.core import interfaces
+
+    good = {"types": [{"name": "Server", "ns": ["ACME", "Aurora"], "kind": "class", "size": 8,
+                       "members": [{"name": "_vptr", "off": 0, "type": "void *"}], "statics": [],
+                       "methods": [{"name": "isRun", "ret": "bool", "virtual": True}]}]}
+    block = interfaces.type_block(good, "ACME::Aurora::Server *s;")
+    assert "virtual bool isRun();" in block
+    assert "_dcore_vtable_anchor" not in block
+
+    bad = {"types": [{"name": "Opaque", "ns": ["ACME", "Aurora"], "kind": "class", "size": 8,
+                      "members": [{"name": "_vptr", "off": 0, "type": "void *"}], "statics": [],
+                      "methods": [{"name": "run", "ret": "void", "params": ["Unknown<T>"],
+                                   "virtual": True}]}]}
+    block = interfaces.type_block(bad, "ACME::Aurora::Opaque *o;")
+    assert "virtual void _dcore_vtable_anchor();" in block
+
+
 def test_guess_language_detects_cxx_headers():
     """Header-only edit gates compile the header without a function. A C++ header that only looks
     like C prototypes (extern "C", <cstdint>, std::) must not be validated as `func.c`; that hides
@@ -4250,6 +4288,13 @@ def test_a_polymorphic_class_keeps_its_vptr_slot():
                         {"name": "x_", "type": "int", "off": 8, "size": 4}],
             "statics": [],
             "methods": [{"name": "run", "ret": "void", "params": [], "virtual": True}]}
+    out = interfaces.type_block(analysis, "Poly p;", types=[poly])
+    assert "virtual void run();" in out and "_dcore_vtable_anchor" not in out
+    assert "int x_;" in out
+
+    # If every virtual signature is unspellable, keep a synthetic anchor so the vptr still
+    # occupies slot 0 and the first real field stays at +8.
+    poly["methods"] = [{"name": "run", "ret": "void", "params": ["Unknown<T>"], "virtual": True}]
     out = interfaces.type_block(analysis, "Poly p;", types=[poly])
     assert "virtual void _dcore_vtable_anchor();" in out
     assert "int x_;" in out
