@@ -2235,6 +2235,35 @@ def test_a_self_call_is_recognized_by_resolved_address_even_with_unrelated_names
     assert judge.compare(target, candidate, symbols=other).match is False
 
 
+def test_got_loads_are_compared_as_linker_relaxed_lea():
+    """A -fPIC object stores through a GOT load (`mov reg,[rip+GOT]`); the linked non-PIE target
+    has the linker-relaxed `lea reg,[rip+sym]`. Same symbol and slot -> equivalent; a different
+    data address must still fail."""
+    from dcore.core import judge
+    from dcore.core.symbols import SymbolTable
+    from dcore.targets.objects import FunctionObj, Reloc
+
+    table = SymbolTable.from_analysis({"data": [{"ea": 0x1007, "name": "g"}]})
+    target = FunctionObj("f", "x86_64", False,
+                         bytes.fromhex("48 8d 05 00 00 00 00 48 89 38 c3"), base_ea=0x1000)
+    for reloc_type in (9, 41, 42):
+        candidate = FunctionObj("f", "x86_64", False,
+                                bytes.fromhex("48 8b 05 00 00 00 00 48 89 38 c3"),
+                                [Reloc(3, reloc_type, "g", -4)])
+        verdict = judge.compare(target, candidate, symbols=table)
+        assert verdict.match and verdict.diff.score == 0
+
+    # the linked image usually keeps a PC32 relocation on the relaxed lea; it must be adopted
+    linked = FunctionObj("f", "x86_64", False, target.code, [Reloc(3, 2, "g", -4)], base_ea=0x1000)
+    candidate = FunctionObj("f", "x86_64", False,
+                            bytes.fromhex("48 8b 05 00 00 00 00 48 89 38 c3"),
+                            [Reloc(3, 42, "g", -4)])
+    assert judge.compare(linked, candidate, symbols=table).match
+
+    other = SymbolTable.from_analysis({"data": [{"ea": 0x1008, "name": "g"}]})
+    assert judge.compare(target, candidate, symbols=other).match is False
+
+
 def test_local_branches_are_equivalent_even_when_the_object_has_a_local_reloc():
     """The linked target has no reloc for `je .L20`; a COFF object can spell it
     `.text+0x20`.  Both sides must normalise to the same relative destination before

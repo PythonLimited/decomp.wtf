@@ -10,7 +10,9 @@ doesn't: that is a real difference and is surfaced in `problems`.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+
+import capstone
 
 from . import scoring
 from .symbols import Reference, SymbolTable
@@ -68,6 +70,70 @@ class Verdict:
         return 0 if self.match else max(1, self.diff.score)
 
 
+def _relax_got_loads(target: FunctionObj, candidate: FunctionObj,
+                     symbols: SymbolTable | None) -> tuple[FunctionObj, FunctionObj]:
+    """Model the linker relaxing `mov reg, [rip + sym@GOT]` to `lea reg, [rip + sym]`.
+
+    The target is a linked non-PIE image, so a `-fPIC` GOT load has already been relaxed by `ld`
+    (`R_X86_64_REX_GOTPCRELX` -> `lea`). The candidate is a relocatable object and still carries
+    the `mov`; without this normalization every PIC access to a global looks like a different
+    instruction and an extra relocation. Only the exact x86-64 GCC relaxation is handled: same
+    instruction slot, `mov` -> `lea`, same register, same RIP-relative field, and the target
+    displacement must resolve to the same data symbol as the candidate's GOT relocation.
+    """
+    if (target.arch != "x86_64" or candidate.arch != "x86_64" or symbols is None
+            or target.base_ea is None):
+        return target, candidate
+    got = [r for r in candidate.relocs if r.type in (9, 41, 42)]  # GOTPCREL / GOTPCRELX / REX_GOTPCRELX
+    if not got:
+        return target, candidate
+    md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+    md.detail = True
+    t_ins = list(md.disasm(target.code, 0))
+    c_ins = list(md.disasm(candidate.code, 0))
+    t_at = {i.address: i for i in t_ins}
+    c_at = {i.address: i for i in c_ins}
+    t_rel = {r.offset: r for r in target.relocs}
+    code = bytearray(candidate.code)
+    extra: list[Reloc] = []
+    changed = False
+    for r in got:
+        tr = t_rel.get(r.offset)
+        if tr is not None:
+            # The linked image normally keeps a PC32 relocation for the relaxed lea. It must name
+            # the same variable; a different symbol is a real difference, not a relaxation.
+            if tr.type in (9, 41, 42) or tr.symbol != r.symbol:
+                continue
+        ci = next((i for i in reversed(c_ins) if i.address <= r.offset < i.address + i.size), None)
+        ti = t_at.get(ci.address) if ci is not None else None
+        if ci is None or ti is None or ci.mnemonic != "mov" or ti.mnemonic != "lea":
+            continue
+        if len(ci.bytes) != len(ti.bytes) or not ti.operands or not ci.operands:
+            continue
+        if ti.operands[0].type != capstone.x86.X86_OP_REG or \
+                ci.operands[0].type != capstone.x86.X86_OP_REG or \
+                ti.operands[0].reg != ci.operands[0].reg:
+            continue
+        tm = ti.operands[1] if len(ti.operands) > 1 else None
+        cm = ci.operands[1] if len(ci.operands) > 1 else None
+        if (tm is None or cm is None or tm.type != capstone.x86.X86_OP_MEM
+                or cm.type != capstone.x86.X86_OP_MEM
+                or tm.mem.base != capstone.x86.X86_REG_RIP
+                or cm.mem.base != capstone.x86.X86_REG_RIP):
+            continue
+        target_ea = target.base_ea + ti.address + ti.size + tm.mem.disp
+        cand_ea = symbols.resolve_data(r.symbol)
+        if cand_ea is None or target_ea != cand_ea:
+            continue
+        code[ci.address:ci.address + ci.size] = ti.bytes
+        changed = True
+        if tr is None:
+            extra.append(Reloc(r.offset, r.type, r.symbol, r.addend))
+    if not changed:
+        return target, candidate
+    return replace(target, relocs=list(target.relocs) + extra), replace(candidate, code=bytes(code))
+
+
 def compare(target: FunctionObj, candidate: FunctionObj, *, report_all_names: bool = False,
             tls_offsets: dict[str, int] | None = None, signature: str | None = None,
             symbols: SymbolTable | None = None, read_bytes=None) -> Verdict:
@@ -84,6 +150,7 @@ def compare(target: FunctionObj, candidate: FunctionObj, *, report_all_names: bo
     `tls_offsets` (symbol leaf -> offset), such a candidate relocation is adopted only if its
     symbol's offset equals the target's immediate at that field. A wrong TLS variable or offset
     still fails; this is link equivalence, not a fuzzy match."""
+    target, candidate = _relax_got_loads(target, candidate, symbols)
     target, candidate = _normalise_local_branches(target, candidate, symbols)
     t_offsets = sorted(r.offset for r in target.relocs)
     c_offsets = sorted(r.offset for r in candidate.relocs)
