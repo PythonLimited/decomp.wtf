@@ -118,6 +118,52 @@ Licensing boundaries:
 See `src/dcore/backends/` for the shared `Analysis` contract; IDA is implemented,
 Ghidra is the next backend.
 
+### Setting up IDA Pro
+
+1. Install a licensed **IDA Pro with IDAPython and idalib** (IDA 9.x; check your
+   license for headless/automation use). IDA Free is not licensed for commercial
+   use.
+2. Install the bridge once, so `dcore` can spawn it:
+
+   ```bash
+   uvx ida-hcli mcp install
+   ```
+
+   This provides `ida-mcp`; having `ida-mcp` on `PATH` works too.
+3. If you use a custom server command, point dcore at it:
+
+   ```bash
+   export DECOMPNET_IDA_MCP="/path/to/ida-mcp stdio --agent=decomp-wtf"
+   ```
+
+4. Start dcore and import your binary. A matching `.i64` is reused when present;
+   sweeps are cached by the binary's SHA-256, so IDA is paid for once per file.
+5. If the database is open in the IDA desktop app, registry edits still save, but
+   the IDA write-through queues until you close it. The app reports the queued
+   count.
+
+### Setting up Ghidra (planned — high priority)
+
+The Ghidra adapter is **not wired yet**; this is the prerequisite setup, not an
+enabled backend. Until it lands, dcore uses IDA or runs without a backend.
+
+1. Install **Ghidra** (Apache-2.0) and the JDK its release notes require
+   (recent Ghidra releases use JDK 21).
+2. Use one of the two integration paths the adapter will support:
+   - Ghidra's headless analyzer, `support/analyzeHeadless`, with the adapter's
+     JSON script;
+   - **PyGhidra**, which ships with recent Ghidra, for in-process Python.
+3. Keep the Ghidra install path available; the adapter will need it to find
+   `analyzeHeadless` or the PyGhidra runtime. No dcore setting for this exists
+   until the adapter lands.
+
+### No backend
+
+Nothing to install. The matcher still compiles each function with the pinned
+compiler and compares bytes and relocations; you lose database names, xrefs and
+pseudocode seeds.
+
+
 ---
 
 ## Install
