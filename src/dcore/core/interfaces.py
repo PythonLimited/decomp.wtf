@@ -359,7 +359,8 @@ _SCALARS = {"void", "bool", "char", "signed char", "unsigned char", "short", "un
             "unsigned __int64", "unsigned __int32", "unsigned __int16", "unsigned __int8",
             "signed __int64", "signed __int32", "signed __int16", "signed __int8"}
 _TYPEDEF_NAMES = {"uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t",
-                  "int64_t", "time_t", "ssize_t", "off_t", "pid_t"}
+                  "int64_t", "time_t", "ssize_t", "off_t", "pid_t", "ino_t", "dev_t", "nlink_t",
+                  "mode_t", "uid_t", "gid_t", "blksize_t", "blkcnt_t"}
 
 # These are declared by the platform's own headers (pthread.h, cxxabi/unwind) once any normal
 # Standard Library header is included. Re-declaring them after <cstdint> is a C++ redeclaration

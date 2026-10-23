@@ -1817,6 +1817,19 @@ def test_set_signature_replaces_a_free_function_prototype(tmp_path, elf_bytes):
     assert not any("int score_update(int *score, int delta, int max);" in b for b in live)
 
 
+def test_interfaces_platform_typedefs_are_spellable_in_methods():
+    """ino_t/dev_t/... come from <sys/stat.h>, which the header includes. If they are not in the
+    fixed typedef set, `_method_decl` drops the method (a virtual/normal member silently disappears)
+    and the source gets "no declaration matches"."""
+    from dcore.core import interfaces
+
+    analysis = {"types": [{"name": "LogFile", "ns": ["ACME", "Aurora", "Core"], "kind": "class",
+                           "size": 544, "members": [], "statics": [],
+                           "methods": [{"name": "fileIno", "ret": "ino_t", "params": []}]}]}
+    block = interfaces.type_block(analysis, "ACME::Aurora::Core::LogFile *p; p->fileIno();")
+    assert "ino_t fileIno();" in block
+
+
 def test_guess_language_detects_cxx_headers():
     """Header-only edit gates compile the header without a function. A C++ header that only looks
     like C prototypes (extern "C", <cstdint>, std::) must not be validated as `func.c`; that hides
