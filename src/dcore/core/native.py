@@ -155,6 +155,7 @@ class NativeEngine:
         self._ida_lock = threading.Lock()
         self._ida_dirty: float | None = None  # pending unsaved database writes
         self._header_fallbacks: dict[tuple[int, int], str] = {}  # (project, function) -> source-driven header
+        self._environments: dict[str, tuple[str, dict]] = {}  # slug -> (analysis/catalog key, report)
 
     # ------------------------------------------------------------------ import
 
@@ -588,6 +589,98 @@ class NativeEngine:
             out["error"] = str(e)
         return out
 
+    def environment_view(self, slug: str, *, analysis: dict | None = None, limit: int = 80) -> dict:
+        """Read-only per-compile-unit environment report.
+
+        This is the resolver surfaced for the plan screen: which producer/flags each unit
+        resolved to, how many functions it covers, whether the exact toolchain is in the
+        catalog, and what evidence drove the decision. It never edits the project, compiles
+        anything, or changes a match.
+        """
+        proj = self.net._project(slug)
+        if analysis is None:
+            analysis = self.analysis(proj)
+
+        from ..model import function_key, resolve_analysis
+        from ..toolchains import catalog
+
+        tools = catalog()
+        if analysis is None:
+            return {"error": "no analysis yet", "units": [], "unresolved_units": [],
+                    "totals": {"units": 0, "functions": 0, "resolved_units": 0,
+                               "unresolved_units": 0, "missing_toolchain_units": 0,
+                               "catalog": sorted(tools)},
+                    "truncated": False}
+
+        try:
+            limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            limit = 80
+        cache_key = "|".join((str(analysis.get("sha256") or ""),
+                              str(analysis.get("generated_at") or ""),
+                              ",".join(sorted(tools)), str(limit)))
+        cached = self._environments.get(slug)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        report = resolve_analysis(analysis, catalog=tools)
+        by_key = {function_key(fn): fn for fn in analysis.get("functions") or []
+                  if isinstance(fn, dict)}
+        rows = []
+        for unit in report.units.values():
+            env = unit.selected
+            sample = []
+            for key in unit.functions[:3]:
+                fn = by_key.get(key) or {}
+                name = fn.get("display") or fn.get("name") or fn.get("linkage")
+                if name:
+                    sample.append(str(name))
+            row = {
+                "unit": unit.unit,
+                "language": unit.language,
+                "functions": len(unit.functions),
+                "sample": sample,
+                "environment": None,
+                "candidates": [
+                    {"toolchain": c.environment.toolchain,
+                     "flags": list(c.environment.flags),
+                     "confidence": round(c.confidence, 3)}
+                    for c in unit.candidates[:3]
+                ],
+            }
+            if env is not None:
+                row["environment"] = {
+                    "id": env.id,
+                    "toolchain": env.toolchain,
+                    "language": env.language,
+                    "flags": list(env.flags),
+                    "confidence": round(env.confidence, 3),
+                    "missing_toolchain": unit.missing_toolchain,
+                    "notes": list(unit.notes),
+                    "evidence": [
+                        {"source": e.source, "detail": e.detail, "location": e.location}
+                        for e in env.evidence
+                    ],
+                }
+            rows.append(row)
+
+        rows.sort(key=lambda r: (-r["functions"], r["unit"]))
+        unresolved = sorted(u.unit for u in report.units.values() if u.selected is None)
+        totals = {
+            "units": len(rows),
+            "functions": sum(r["functions"] for r in rows),
+            "resolved_units": sum(1 for r in rows if r["environment"] is not None),
+            "unresolved_units": len(unresolved),
+            "missing_toolchain_units": sum(1 for r in rows
+                                           if (r["environment"] or {}).get("missing_toolchain")),
+            "catalog": sorted(tools),
+        }
+        shown = rows[:limit] if limit else rows
+        out = {"units": shown, "unresolved_units": unresolved, "totals": totals,
+               "truncated": len(shown) < len(rows)}
+        self._environments[slug] = (cache_key, out)
+        return out
+
     def plan_view(self, slug: str) -> dict:
         """Everything the plan screen renders: file nodes with treatments, totals, compiler state."""
         from . import plan as plan_mod
@@ -602,6 +695,7 @@ class NativeEngine:
                "confirmed": bool((cfg.get("plan") or {}).get("confirmed_at")),
                "analysis_stale": None, "nodes": [], "totals": {}, "error": None}
         analysis = self.analysis(proj)
+        out["environments"] = self.environment_view(slug, analysis=analysis, limit=80)
         if analysis is None:
             out["error"] = "no analysis yet"
             return out

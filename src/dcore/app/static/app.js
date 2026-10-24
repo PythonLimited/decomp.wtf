@@ -2400,6 +2400,7 @@ function nativeCompilerCard(data) {
       ${imgState}
     </div>
     <p class="muted small np-note">${c.error ? `<b class="bad">⚠ ${esc(c.error)}</b>` : esc(c.driver ? `${c.driver} — ${c.note}` : (c.note || "auto-detected"))}</p>`;
+  if (data.environments) sec.append(nativeEnvironmentReport(data.environments));
   const note = () => sec.querySelector(".np-note");
   const pull = sec.querySelector(".np-pull");
   if (pull) {
@@ -2429,6 +2430,42 @@ function nativeCompilerCard(data) {
     } catch (e) { toast(esc(e.message), "err"); }
   };
   return sec;
+}
+
+function nativeEnvironmentReport(env) {
+  const t = env.totals || {};
+  const d = document.createElement("details");
+  d.className = "np-envs";
+  // Open by default only when something needs attention; a clean report stays compact.
+  d.open = ((t.unresolved_units || 0) + (t.missing_toolchain_units || 0)) > 0;
+  const rows = (env.units || []).slice(0, 12).map((u) => {
+    const e = u.environment;
+    const flags = e && (e.flags || []).length ? ` ${e.flags.join(" ")}` : "";
+    const status = !e
+      ? `<span class="chip-s bad">unresolved</span>`
+      : e.missing_toolchain
+        ? `<span class="chip-s warn">missing toolchain</span>`
+        : `<span class="chip-s">ready</span>`;
+    const detail = e
+      ? [e.toolchain + flags, ...(e.notes || []), ...(u.sample || []),
+         ...((u.candidates || []).map((c) => `candidate ${c.toolchain} (${Math.round((c.confidence || 0) * 100)}%)`))]
+      : ["no environment"];
+    return `<div class="np-env-row" title="${esc(detail.join("\n"))}">
+      <code class="np-env-unit">${esc(u.unit || "(no compile unit)")}</code>
+      <span class="np-env-tool">${e ? `${esc(e.toolchain)}${esc(flags)}` : "—"}</span>
+      <span class="chip-s">${(u.functions || 0).toLocaleString()} fn</span>
+      <span class="chip-s">${e ? `${Math.round((e.confidence || 0) * 100)}%` : "—"}</span>
+      ${status}
+    </div>`;
+  }).join("");
+  const summary = `${(t.units || 0).toLocaleString()} units · ${(t.functions || 0).toLocaleString()} functions · `
+    + `${(t.missing_toolchain_units || 0).toLocaleString()} missing toolchain · `
+    + `${(t.unresolved_units || 0).toLocaleString()} unresolved`;
+  d.innerHTML = `<summary><b>Compile units</b> <span class="muted small">${esc(summary)}</span></summary>
+    ${env.error ? `<p class="muted small">${esc(env.error)}</p>` : ""}
+    <div class="np-env-list">${rows || `<p class="muted small">No compile units in this analysis.</p>`}</div>
+    ${env.truncated ? `<p class="muted small">Showing the largest ${(env.units || []).length.toLocaleString()} of ${(t.units || 0).toLocaleString()} units.</p>` : ""}`;
+  return d;
 }
 
 async function runNativeJob(endpoint, btn, logEl, busyText, reopen) {

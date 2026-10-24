@@ -435,6 +435,54 @@ def _write_fake_analysis(net, slug, binary, tmp_path):
     return analysis
 
 
+def test_plan_view_reports_a_read_only_environment_per_compile_unit(tmp_path, elf_bytes):
+    import json as _json
+
+    net, slug, binary = _native_project(tmp_path, elf_bytes)
+    _write_fake_analysis(net, slug, binary, tmp_path)
+    cache = Path(net.project_row(slug)["root"]) / ".decomp-wtf" / "native" / "analysis.json"
+    data = _json.loads(cache.read_text())
+    for fn in data["functions"]:
+        fn["cu"] = "src/hello.c"
+    data["unit_compilers"] = {
+        "src/hello.c": {"compiler": "GNU C11 9.1.0 -O2", "flags": ["-O2"]},
+    }
+    data["compilers"] = [{"compiler": "GNU C11 9.1.0", "flags": ["-O2"],
+                          "functions": 2, "units": 1}]
+    cache.write_text(_json.dumps(data))
+    net.native._analysis.pop(slug, None)
+    net.native._environments.pop(slug, None)
+
+    view = net.native.environment_view(slug)
+    assert view["totals"] == {
+        "units": 1, "functions": 2, "resolved_units": 1, "unresolved_units": 0,
+        "missing_toolchain_units": 0,
+        "catalog": ["gcc-9.1.0-x86_64-linux-gnu",
+                    "msvc-19.00.24210-x86_64-pc-windows-msvc"],
+    }
+    row = view["units"][0]
+    assert row["unit"] == "src/hello.c"
+    assert row["functions"] == 2
+    assert row["environment"]["toolchain"] == "gcc-9.1.0-x86_64-linux-gnu"
+    assert row["environment"]["flags"] == ["-O2"]
+    assert row["environment"]["missing_toolchain"] is False
+    assert row["candidates"][0]["toolchain"] == "gcc-9.1.0-x86_64-linux-gnu"
+    assert view["truncated"] is False
+
+    plan = net.native.plan_view(slug)
+    assert plan["environments"]["units"][0]["environment"]["toolchain"] == \
+        "gcc-9.1.0-x86_64-linux-gnu"
+
+
+def test_environment_view_without_analysis_is_empty_but_read_only(tmp_path, elf_bytes):
+    net, slug, _binary = _native_project(tmp_path, elf_bytes)
+    view = net.native.environment_view(slug)
+    assert view["error"] == "no analysis yet"
+    assert view["units"] == [] and view["unresolved_units"] == []
+    assert view["totals"]["catalog"] == ["gcc-9.1.0-x86_64-linux-gnu",
+                                         "msvc-19.00.24210-x86_64-pc-windows-msvc"]
+
+
 def test_name_function_alias_is_visible_to_the_symbol_table(tmp_path, elf_bytes):
     from dcore.core.network import NetworkError
 

@@ -753,6 +753,19 @@ def build(net: Engine, home: Path, port: int, secret: str):
         except (NetworkError, ValueError, OSError) as e:
             return fail(e)
 
+    @mcp.custom_route("/api/native/environments", methods=["GET"])
+    async def api_native_environments(request: Request) -> Response:
+        """Read-only per-compile-unit environment report (resolver preview)."""
+        if (bad := guard(request)):
+            return bad
+        slug = str(request.query_params.get("slug") or settings.data.get("last_project") or "")
+        try:
+            native_of(slug)
+            limit = int(request.query_params.get("limit") or 80)
+            return JSONResponse(await call(lambda: net.native.environment_view(slug, limit=limit)))
+        except (NetworkError, ValueError, OSError) as e:
+            return fail(e)
+
     @mcp.custom_route("/api/native/analyze", methods=["POST"])
     async def api_native_analyze(request: Request) -> Response:
         if (bad := guard(request, write=True)):
