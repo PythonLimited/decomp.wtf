@@ -245,7 +245,17 @@ def _types(dw, cu) -> list[dict]:
                     members = []
                     statics = []
                     methods = []
+                    bases = []
                     for m in child.iter_children():
+                        if m.tag == "DW_TAG_inheritance":
+                            virt = _attr(m, "DW_AT_virtuality")
+                            acc = _attr(m, "DW_AT_accessibility")
+                            bases.append({
+                                "type": type_text(m),
+                                "virtual": bool(virt),
+                                "access": (int(acc) if acc is not None else 1),
+                            })
+                            continue
                         if m.tag == "DW_TAG_subprogram":
                             mn = name_of(m)
                             if not mn:
@@ -292,6 +302,8 @@ def _types(dw, cu) -> list[dict]:
                             continue
                         if m.tag != "DW_TAG_member":
                             continue
+                        if m.attributes.get("DW_AT_artificial"):
+                            continue  # the compiler's vptr/base bookkeeping, not source
                         if m.attributes.get("DW_AT_declaration"):
                             mn = name_of(m)
                             if mn:
@@ -299,11 +311,20 @@ def _types(dw, cu) -> list[dict]:
                                 # reconstructed class needs to declare them
                                 statics.append({"name": mn, "type": type_text(m)})
                             continue
-                        members.append({"name": name_of(m), "off": member_offset(m), "type": type_text(m)})
+                        member = {"name": name_of(m), "off": member_offset(m),
+                                  "type": type_text(m)}
+                        if m.attributes.get("DW_AT_bit_size") is not None:
+                            member["bit_size"] = int(m.attributes["DW_AT_bit_size"].value)
+                        if m.attributes.get("DW_AT_bit_offset") is not None:
+                            member["bit_offset"] = int(m.attributes["DW_AT_bit_offset"].value)
+                        members.append(member)
                     members.sort(key=lambda x: x["off"])
+                    align = _attr(child, "DW_AT_alignment")
                     out.append({"name": nm, "ns": list(ns), "size": int(size_attr.value),
+                                "align": int(align) if align is not None else None,
                                 "kind": "class" if child.tag == "DW_TAG_class_type" else "struct",
-                                "members": members, "statics": statics, "methods": methods})
+                                "bases": bases, "members": members, "statics": statics,
+                                "methods": methods})
                 walk(child, ns)  # nested classes keep their enclosing namespaces
                 continue
             walk(child, ns)
