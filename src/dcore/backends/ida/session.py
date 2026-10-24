@@ -102,7 +102,13 @@ class IdaSession:
             self._ready.set()
 
     async def _main(self, cmd: list[str]) -> None:
-        params = StdioServerParameters(command=cmd[0], args=cmd[1:], env=dict(os.environ))
+        env = dict(os.environ)
+        # IDA 9.4's bundled ida-nexus plugin can be older than ida-mcp and kills the worker with
+        # `No module named 'ida_nexus._session'`. dcore is a local, single-user idalib client, so
+        # the idalib-only path is the correct default; set the variable explicitly to 0 to opt in
+        # to a nexus-backed worker.
+        env.setdefault("IDA_NEXUS_IDALIB_ONLY", "1")
+        params = StdioServerParameters(command=cmd[0], args=cmd[1:], env=env)
         self._stop = asyncio.Event()
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:

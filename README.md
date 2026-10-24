@@ -133,6 +133,11 @@ Ghidra is the next backend.
    dcore runs the fallback as `uvx --offline ida-mcp …`, so warm the cache once
    while online (`uvx ida-mcp --help`) — after that, starting IDA needs no network.
    If the package is not cached, the error says so instead of trying PyPI.
+   dcore also defaults to idalib workers (`IDA_NEXUS_IDALIB_ONLY=1`): IDA 9.4's
+   bundled `ida-nexus` can be older than `ida-mcp` and otherwise kills the worker
+   with `No module named 'ida_nexus._session'`. To use a working nexus backend
+   instead, run `uvx ida-hcli plugin update ida-nexus` and set
+   `IDA_NEXUS_IDALIB_ONLY=0`.
 3. If you use a custom server command, point dcore at it:
 
    ```bash
