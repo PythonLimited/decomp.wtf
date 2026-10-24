@@ -4,21 +4,23 @@
 
 #if defined(_MSC_VER)
 #define CANARY_NOINLINE __declspec(noinline)
+#define CANARY_EXPORT __declspec(dllexport)
 #else
 #define CANARY_NOINLINE __attribute__((noinline))
+#define CANARY_EXPORT __attribute__((visibility("default")))
 #endif
 
-extern "C" CANARY_NOINLINE int canary_add(int a, int b) {
+extern "C" CANARY_EXPORT CANARY_NOINLINE int canary_add(int a, int b) {
     return a + b;
 }
 
 struct Widget {
     int value;
-    CANARY_NOINLINE int get() const { return value; }
-    CANARY_NOINLINE void set(int next) { value = next; }
+    CANARY_EXPORT CANARY_NOINLINE int get() const { return value; }
+    CANARY_EXPORT CANARY_NOINLINE void set(int next) { value = next; }
 };
 
-CANARY_NOINLINE int canary_widget(int seed) {
+CANARY_EXPORT CANARY_NOINLINE int canary_widget(int seed) {
     Widget widget;
     widget.value = seed;
     widget.set(widget.get() + 2);
@@ -30,13 +32,13 @@ struct Flags {
     unsigned int high : 5;
 };
 
-CANARY_NOINLINE unsigned int canary_flags(const Flags& flags) {
+CANARY_EXPORT CANARY_NOINLINE unsigned int canary_flags(const Flags& flags) {
     return flags.low | (flags.high << 3);
 }
 
 int canary_global = 0;
 
-CANARY_NOINLINE int canary_bump(int by) {
+CANARY_EXPORT CANARY_NOINLINE int canary_bump(int by) {
     canary_global += by;
     return canary_global;
 }

@@ -94,3 +94,31 @@ speculate a direct call into `call_virtual`, so a standalone candidate cannot
 match). These flags are part of the pinned environment, so the candidate compile
 uses them too. Expanding the flag set until a function matches is exactly what
 `probe_environment` will formalize later.
+
+## VS2015 slice
+
+```bash
+tests/canary/build.sh msvc
+uv run python tests/canary/slice_msvc.py
+```
+
+The MSVC image has no VC link libraries, so this canary is a freestanding PE
+(`/NODEFAULTLIB`) with exported functions. Exports provide authoritative RVAs;
+the PDB provides types and code sizes. The linked PDB's public-address map was
+not reliable for this tiny image, so the export table is the target address
+source.
+
+Expected tail:
+
+```text
+layout probe compile: ok
+canary_add: MATCH score=0
+?canary_widget@@YAHH@Z: MATCH score=0
+?canary_flags@@YAIAEBUFlags@@@Z: MATCH score=0
+?get@Widget@@QEBAHXZ: MATCH score=0
+?set@Widget@@QEAAXH@Z: MATCH score=0
+```
+
+The slice resolves `msvc-19.00.24210-x86_64-pc-windows-msvc`, compiles
+`/O2 /GS- /GR- /EHs-c-` objects with the pinned Hangover image, and judges
+against the exported function bytes.

@@ -73,14 +73,15 @@ if [[ "$target" == "all" || "$target" == "msvc" ]]; then
     # Freestanding PE: enough for resolver/judge preflight without the CRT.
     docker run --rm "${msvc_platform_args[@]}" \
         -v "$here:/work" -w /work "$MSVC_IMAGE" \
-        cl /nologo /O2 /GS- /GR- /EHs-c- \
+        cl /nologo /O2 /GS- /GR- /EHs-c- /Zi \
         /c /Fo:/work/build/vs2015/canary_pe.obj \
+        /Fd:/work/build/vs2015/canary_pe.pdb \
         /work/src/canary_pe.cpp
     docker run --rm "${msvc_platform_args[@]}" \
         -v "$here:/work" -w /work "$MSVC_IMAGE" \
         sh -lc 'export WINEPREFIX=/wine WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml="; \
             wine64 /opt/msvc/VC/bin/amd64/link.exe /NOLOGO /NODEFAULTLIB \
-            /ENTRY:main /SUBSYSTEM:CONSOLE /DEBUG \
+            /ENTRY:main /SUBSYSTEM:CONSOLE /DEBUG /INCREMENTAL:NO \
             /PDB:Z:/work/build/vs2015/acme-canary-min.pdb \
             /OUT:Z:/work/build/vs2015/acme-canary-min.exe \
             Z:/work/build/vs2015/canary_pe.obj'
