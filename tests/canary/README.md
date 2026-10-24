@@ -80,9 +80,13 @@ Expected tail:
 
 ```text
 layout probe compile: ok
+  closure: identical (2 lines)
 _ZN4ACME6Aurora3addEii: MATCH score=0
+  closure: identical (19 lines)
 _ZNK4ACME6Aurora6Widget3getEv: MATCH score=0
+  closure: identical (18 lines)
 _ZN4ACME6Aurora11flags_valueERKNS0_5FlagsE: MATCH score=0
+  closure: identical (20 lines)
 _ZN4ACME6Aurora12call_virtualERKNS0_11VirtualBaseE: MATCH score=0
 ```
 
@@ -94,6 +98,12 @@ speculate a direct call into `call_virtual`, so a standalone candidate cannot
 match). These flags are part of the pinned environment, so the candidate compile
 uses them too. Expanding the flag set until a function matches is exactly what
 `probe_environment` will formalize later.
+
+The `closure` lines compile the same function body against `render_header()`
+instead of the full prelude and require the resulting object code/relocations to
+be identical. Until source/AST dependency extraction lands, body-only type uses
+are passed to `render_header(required=...)`; signature, owner, and recorded
+reference edges are followed automatically.
 
 ## VS2015 slice
 
@@ -112,10 +122,15 @@ Expected tail:
 
 ```text
 layout probe compile: ok
+  closure: identical (2 lines)
 canary_add: MATCH score=0
+  closure: identical (10 lines)
 ?canary_widget@@YAHH@Z: MATCH score=0
+  closure: identical (9 lines)
 ?canary_flags@@YAIAEBUFlags@@@Z: MATCH score=0
+  closure: identical (10 lines)
 ?get@Widget@@QEBAHXZ: MATCH score=0
+  closure: identical (10 lines)
 ?set@Widget@@QEAAXH@Z: MATCH score=0
 ```
 

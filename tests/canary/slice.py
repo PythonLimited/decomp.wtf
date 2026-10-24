@@ -23,6 +23,8 @@ from dcore.core.judge import compare
 from dcore.core.target import Reconstructor
 from dcore.model import (
     Environment,
+    FunctionDecl,
+    render_header,
     render_layout_probes,
     render_prelude,
     resolve_analysis,
@@ -109,6 +111,7 @@ def _compile_config(env: Environment, platform: str) -> CompilerConfig:
 CASES = [
     {
         "linkage": "_ZN4ACME6Aurora3addEii",
+        "required": (),
         "body": """
 namespace ACME { namespace Aurora {
 int add(int a, int b) { return a + b; }
@@ -117,6 +120,7 @@ int add(int a, int b) { return a + b; }
     },
     {
         "linkage": "_ZNK4ACME6Aurora6Widget3getEv",
+        "required": ("t:ACME::Aurora::Widget",),
         "body": """
 namespace ACME { namespace Aurora {
 int Widget::get() const { return value; }
@@ -125,6 +129,7 @@ int Widget::get() const { return value; }
     },
     {
         "linkage": "_ZN4ACME6Aurora11flags_valueERKNS0_5FlagsE",
+        "required": ("t:ACME::Aurora::Flags",),
         "body": """
 namespace ACME { namespace Aurora {
 unsigned int flags_value(const Flags& flags) {
@@ -137,6 +142,7 @@ unsigned int flags_value(const Flags& flags) {
     },
     {
         "linkage": "_ZN4ACME6Aurora12call_virtualERKNS0_11VirtualBaseE",
+        "required": ("t:ACME::Aurora::VirtualBase",),
         "body": """
 namespace ACME { namespace Aurora {
 int call_virtual(const VirtualBase& base) { return base.value(); }
@@ -166,6 +172,8 @@ def main() -> int:
     print(f"environment: {env.toolchain}")
     print(f"flags: {' '.join(env.flags)}")
     print(f"prelude: {len(prelude.splitlines())} lines, probes: {len(probes.splitlines())} lines")
+    by_linkage = {f.entity.linkage: f.entity.id for f in facts.facts
+                  if isinstance(f.entity, FunctionDecl) and f.entity.linkage}
 
     cfg = _compile_config(env, "linux/amd64")
     layout = compile_source(cfg, prelude + "\n" + probes,
@@ -191,6 +199,29 @@ def main() -> int:
             print(f"{case['linkage']}: candidate symbol missing")
             failed += 1
             continue
+
+        fid = by_linkage.get(case["linkage"])
+        if fid is None:
+            print(f"{case['linkage']}: no function fact")
+            failed += 1
+            continue
+        header = render_header(facts, fid, references=facts.references,
+                               required=case["required"], include_functions=False)
+        closure = compile_source(cfg, header, case["body"], source_name="func.cpp")
+        if not closure.ok or closure.obj is None:
+            print(f"{case['linkage']}: closure compile FAILED")
+            print(closure.log)
+            failed += 1
+            continue
+        closed = reader.extract_function(closure.obj, case["linkage"])
+        same = (closed is not None and closed.code == candidate.code
+                and [(r.offset, r.type, r.symbol, r.addend) for r in closed.relocs]
+                == [(r.offset, r.type, r.symbol, r.addend) for r in candidate.relocs])
+        print(f"  closure: {'identical' if same else 'DIFF'} "
+              f"({len(header.splitlines())} lines)")
+        if not same:
+            failed += 1
+
         target = _target(args.canary, case["linkage"])
         verdict = compare(target, candidate)
         print(f"{case['linkage']}: {'MATCH' if verdict.match else 'diff'} "

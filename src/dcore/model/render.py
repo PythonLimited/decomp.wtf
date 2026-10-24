@@ -8,11 +8,12 @@ subset of this output.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from textwrap import indent
 
-from .facts import Fact
+from .facts import Fact, Reference
 from .types import (
     Array,
     Builtin,
@@ -302,10 +303,110 @@ def _stdlib_includes(entities: _Entities) -> list[str]:
     return out
 
 
-def render_prelude(facts: Iterable[Fact], *, include_functions: bool = True) -> str:
-    """One canonical declaration unit: includes, forward declarations, type definitions, prototypes."""
+def _type_refs(ref: TypeRef):
+    """Every named type a declaration references, including through pointers/templates."""
 
-    entities = _collect(facts)
+    if isinstance(ref, Named):
+        yield ref.id
+    elif isinstance(ref, Qualified):
+        yield from _type_refs(ref.of)
+    elif isinstance(ref, (Pointer, ReferenceType)):
+        yield from _type_refs(ref.to)
+    elif isinstance(ref, Array):
+        yield from _type_refs(ref.of)
+    elif isinstance(ref, TemplateInstance):
+        yield ref.template
+        for arg in ref.args:
+            if not isinstance(arg, int):
+                yield from _type_refs(arg)
+    elif isinstance(ref, FunctionType):
+        yield from _type_refs(ref.ret)
+        for param in ref.params:
+            yield from _type_refs(param)
+
+
+def _header_entities(facts: Iterable[Fact], function_id: str, *,
+                     references: Iterable[Reference] = (),
+                     required: Iterable[str] = ()) -> _Entities:
+    """Dependency-closed subset for one function.
+
+    The closure starts at the function's owner, signature and typed reference edges.
+    A caller can add explicit requirements for body-only uses until source/AST
+    dependency extraction lands; this keeps the renderer honest instead of scanning
+    identifiers in source text.
+    """
+
+    all_entities = _collect(facts)
+    if function_id not in all_entities.functions:
+        raise RenderError(f"unknown function {function_id}")
+    refs: dict[str, list[Reference]] = defaultdict(list)
+    for ref in references:
+        refs[ref.src].append(ref)
+
+    types: dict[str, TypeDecl] = {}
+    functions: dict[str, FunctionDecl] = {}
+    globals_: dict[str, GlobalDecl] = {}
+
+    def include_global(gid: str) -> None:
+        decl = all_entities.globals.get(gid)
+        if decl is None or gid in globals_:
+            return
+        globals_[gid] = decl
+        for tid in _type_refs(decl.type):
+            include_type(tid)
+        for ref in refs.get(gid, ()):
+            include_entity(ref.dst)
+
+    def include_function(fid: str) -> None:
+        decl = all_entities.functions.get(fid)
+        if decl is None or fid in functions:
+            return
+        functions[fid] = decl
+        if decl.owner:
+            include_type(decl.owner)
+        for tid in _type_refs(decl.signature.ret):
+            include_type(tid)
+        for param in decl.signature.params:
+            for tid in _type_refs(param):
+                include_type(tid)
+        for ref in refs.get(fid, ()):
+            include_entity(ref.dst)
+
+    def include_type(tid: str) -> None:
+        decl = all_entities.types.get(tid)
+        if decl is None or tid in types:
+            return
+        types[tid] = decl
+        for base in decl.bases:
+            for dep in _type_refs(base.type):
+                include_type(dep)
+        for member in decl.members:
+            for dep in _type_refs(member.type):
+                include_type(dep)
+        for method in decl.methods:
+            for dep in _type_refs(method.signature.ret):
+                include_type(dep)
+            for param in method.signature.params:
+                for dep in _type_refs(param):
+                    include_type(dep)
+        for ref in refs.get(tid, ()):
+            include_entity(ref.dst)
+
+    def include_entity(eid: str) -> None:
+        if eid in all_entities.types:
+            include_type(eid)
+        elif eid in all_entities.functions:
+            include_function(eid)
+        elif eid in all_entities.globals:
+            include_global(eid)
+
+    include_function(function_id)
+    for eid in required:
+        include_entity(eid)
+    return _Entities(types, all_entities.scopes, functions, globals_)
+
+
+def _render_entities(entities: _Entities, *, include_functions: bool = True) -> str:
     lines = _stdlib_includes(entities)
     lines.append("")
 
@@ -338,6 +439,24 @@ def render_prelude(facts: Iterable[Fact], *, include_functions: bool = True) -> 
                 id=decl.id, name=name, type=decl.type, linkage=decl.linkage,
                 storage=decl.storage, address=decl.address, unit=decl.unit))))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_prelude(facts: Iterable[Fact], *, include_functions: bool = True) -> str:
+    """One canonical declaration unit: includes, forward declarations, type definitions, prototypes."""
+
+    return _render_entities(_collect(facts), include_functions=include_functions)
+
+
+def render_header(facts: Iterable[Fact], function_id: str, *,
+                  references: Iterable[Reference] = (),
+                  required: Iterable[str] = (),
+                  include_functions: bool = True) -> str:
+    """A dependency-closed subset of the validated prelude for one function."""
+
+    return _render_entities(
+        _header_entities(facts, function_id, references=references, required=required),
+        include_functions=include_functions,
+    )
 
 
 def render_layout_probes(facts: Iterable[Fact], *, environment: str | None = None) -> str:

@@ -15,7 +15,7 @@ from .environment import (
     Toolchain,
 )
 from .facts import REFERENCE_KINDS, Fact, Match, Reference
-from .render import RenderError, render_layout_probes, render_prelude
+from .render import RenderError, render_header, render_layout_probes, render_prelude
 from .resolve import (
     Producer,
     ResolutionReport,
@@ -96,6 +96,7 @@ __all__ = [
     "load_toolchain",
     "normalize_target",
     "parse_producer",
+    "render_header",
     "render_layout_probes",
     "render_prelude",
     "resolve_analysis",

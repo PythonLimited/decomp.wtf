@@ -27,6 +27,8 @@ from dcore.core.judge import compare
 from dcore.core.target import Reconstructor
 from dcore.model import (
     Environment,
+    FunctionDecl,
+    render_header,
     render_layout_probes,
     render_prelude,
     resolve_analysis,
@@ -47,12 +49,13 @@ EXPORT_TO_PDB = {
 }
 CASES = [
     {
-        "linkage": "canary_add", "pdb_name": "canary_add",
+        "linkage": "canary_add", "pdb_name": "canary_add", "required": (),
         "signature": "int (int, int)",
         "body": 'extern "C" int canary_add(int a, int b) { return a + b; }',
     },
     {
         "linkage": "?canary_widget@@YAHH@Z", "pdb_name": "canary_widget",
+        "required": ("t:Widget",),
         "signature": "int (int)",
         "body": """
 int canary_widget(int seed) {
@@ -65,6 +68,7 @@ int canary_widget(int seed) {
     },
     {
         "linkage": "?canary_flags@@YAIAEBUFlags@@@Z", "pdb_name": "canary_flags",
+        "required": ("t:Flags",),
         "signature": "unsigned int (const Flags&)",
         "body": """
 unsigned int canary_flags(const Flags& flags) {
@@ -75,11 +79,13 @@ unsigned int canary_flags(const Flags& flags) {
     },
     {
         "linkage": "?get@Widget@@QEBAHXZ", "pdb_name": "Widget::get",
+        "required": ("t:Widget",),
         "signature": "int ()",
         "body": "int Widget::get() const { return value; }",
     },
     {
         "linkage": "?set@Widget@@QEAAXH@Z", "pdb_name": "Widget::set",
+        "required": ("t:Widget",),
         "signature": "void (int)",
         "body": "void Widget::set(int next) { value = next; }",
     },
@@ -267,6 +273,8 @@ def main() -> int:
     print(f"environment: {env.toolchain}")
     print(f"flags: {' '.join(env.flags)}")
     print(f"prelude: {len(prelude.splitlines())} lines, probes: {len(probes.splitlines())} lines")
+    by_linkage = {f.entity.linkage: f.entity.id for f in facts.facts
+                  if isinstance(f.entity, FunctionDecl) and f.entity.linkage}
 
     cfg = _compile_config(env)
     layout = compile_source(cfg, prelude + "\n" + probes,
@@ -293,6 +301,29 @@ def main() -> int:
             print(f"{case['linkage']}: candidate symbol missing")
             failed += 1
             continue
+
+        fid = by_linkage.get(case["linkage"])
+        if fid is None:
+            print(f"{case['linkage']}: no function fact")
+            failed += 1
+            continue
+        header = render_header(facts, fid, references=facts.references,
+                               required=case["required"], include_functions=False)
+        closure = compile_source(cfg, header, case["body"], source_name="func.cpp")
+        if not closure.ok or closure.obj is None:
+            print(f"{case['linkage']}: closure compile FAILED")
+            print(closure.log)
+            failed += 1
+            continue
+        closed = reader.extract_function(closure.obj, case["linkage"])
+        same = (closed is not None and closed.code == candidate.code
+                and [(r.offset, r.type, r.symbol, r.addend) for r in closed.relocs]
+                == [(r.offset, r.type, r.symbol, r.addend) for r in candidate.relocs])
+        print(f"  closure: {'identical' if same else 'DIFF'} "
+              f"({len(header.splitlines())} lines)")
+        if not same:
+            failed += 1
+
         target = rec.view(functions[exports[case["linkage"]]])
         if target is None:
             print(f"{case['linkage']}: target view missing")
