@@ -1,0 +1,21 @@
+{
+  "id": "msvc-19.00.24210-x86_64-pc-windows-msvc",
+  "family": "msvc",
+  "version": "19.00.24210",
+  "target": "x86_64-pc-windows-msvc",
+  "abi": "ms",
+  "object_format": "pe",
+  "driver": ["cl"],
+  "image": "dcore-msvc-wine:2015u3",
+  "platform": "linux/amd64",
+  "stdlib": "MSVC STL 14.00 (msvcp140)",
+  "crt": "vcruntime140 / UCRT",
+  "macros": {
+    "_MSC_VER": "1900",
+    "_MSC_FULL_VER": "190024210",
+    "_MSVC_LANG": "201402L"
+  },
+  "probe_hash": "",
+  "license": "Microsoft EULA; user-provided toolset, not redistributed",
+  "tier": "supported"
+}
